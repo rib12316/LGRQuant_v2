@@ -34,11 +34,15 @@ import torch.nn as nn
 from transformers import AutoTokenizer
 
 from lgrquant.core.linear_w2a16 import LinearW2A16  # noqa: E402
-from lgrquant.core.linear_w4a16 import LinearW4A16, _prewarm_w4a16  # noqa: E402
 from lgrquant.core.decoupleQ_kernels import (  # noqa: E402
     dQ_preprocess_weights_int2_for_weight_only,
 )
 from lgrquant.data.loader import get_loaders  # noqa: E402
+
+# W4 imports are deferred to avoid marlin dependency when using W2 only
+def _get_linear_w4a16():
+    from lgrquant.core.linear_w4a16 import LinearW4A16, _prewarm_w4a16
+    return LinearW4A16, _prewarm_w4a16
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +118,9 @@ def make_qw2_linear(old_linear: nn.Linear, sd: dict, group_size: int, name: str)
 
 def make_qw4_linear(old_linear: nn.Linear, sd: dict, group_size: int, name: str):
     """把一个 nn.Linear 替换成 LinearW4A16（sym，无 zp）。"""
+    # Lazy import to avoid marlin dependency when using W2 only
+    LinearW4A16, _ = _get_linear_w4a16()
+
     in_features = old_linear.in_features
     out_features = old_linear.out_features
     has_bias = old_linear.bias is not None
@@ -288,6 +295,7 @@ def load_quantized_model(model_path, ckpt_path, group_size, kernel="w2",
     if kernel == "w2":
         _prewarm_w2a16(model)
     elif kernel == "w4":
+        _, _prewarm_w4a16 = _get_linear_w4a16()
         _prewarm_w4a16(model)
 
     return model
@@ -344,7 +352,8 @@ def load_quantizers_model(model_path, quantizers_path, group_size, asym=True,
     if kernel == "w2":
         _prewarm_w2a16(model)
     elif kernel == "w4":
-        _prewarm_w4a16(model)
+        _, _prewarm_w4a16_fn = _get_linear_w4a16()
+        _prewarm_w4a16_fn(model)
 
     return model
 

@@ -28,10 +28,10 @@ cd "$PROJECT_ROOT"
 # Load config values (requires yq or python)
 # For now, use default values
 python -m lgrquant.stage1.quantize \
-    --model "${MODEL_PATH:-/data2/llms/Qwen2.5-7B-Instruct}" \
+    --model "${MODEL_PATH:-/data2/llms/Qwen2.5-3B-Instruct}" \
     --dataset wikitext2 \
     --wbits 2 \
-    --groupsize 64 \
+    --group-size 64 \
     --save \
     --out_path "${OUTPUT_ROOT:-./outputs}/stage1" \
     "$@"

@@ -4,14 +4,14 @@
 
 set -e
 
-# 初始化 conda (必须在脚本中执行)
+# 初始化 conda (脚本中激活环境必需)
 eval "$(conda shell.bash hook)" 2>/dev/null || source "$(conda info --base)/etc/profile.d/conda.sh" 2>/dev/null || {
     echo "ERROR: Cannot initialize conda. Please run: conda init bash"
     exit 1
 }
 
-# 配置
-MODEL_PATH="${MODEL_PATH:-/data2/llms/Qwen2.5-3B}"
+# 配置 — 根据你的实际路径修改
+MODEL_PATH="${MODEL_PATH:-/data2/llms/Qwen2.5-3B-Instruct}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/tmp/lgrquant_quick_test}"
 NSAMPLES="${NSAMPLES:-32}"
 TRAIN_STEPS="${TRAIN_STEPS:-10}"
@@ -25,9 +25,11 @@ echo "Samples: $NSAMPLES"
 echo "Train steps: $TRAIN_STEPS"
 echo ""
 
-mkdir -p "$OUTPUT_ROOT"
+mkdir -p "$OUTPUT_ROOT/logs"
 
-# Stage 1
+# -------------------------------------------------------------------------
+# Stage 1: Quantization (dq_xx 环境)
+# -------------------------------------------------------------------------
 echo "[1/4] Stage 1: Quantization"
 echo "--------------------------------------------"
 conda activate dq_xx
@@ -37,16 +39,18 @@ python -m lgrquant.stage1.quantize \
     --model "$MODEL_PATH" \
     --dataset wikitext2 \
     --wbits 2 \
-    --groupsize 64 \
+    --group-size 64 \
     --save \
     --nsamples $NSAMPLES \
     --out_path "$OUTPUT_ROOT/stage1" \
-    2>&1 | tee "$OUTPUT_ROOT/stage1.log"
+    2>&1 | tee "$OUTPUT_ROOT/logs/stage1.log"
 
 echo "✓ Stage 1 completed"
 echo ""
 
-# Precompute
+# -------------------------------------------------------------------------
+# Precompute: Teacher Logits Caching (abq-llm 环境)
+# -------------------------------------------------------------------------
 echo "[2/4] Precompute: Teacher Logits Caching"
 echo "--------------------------------------------"
 conda activate abq-llm
@@ -58,12 +62,14 @@ python -m lgrquant.stage2.precompute_teacher_topk \
     --seqlen 2048 \
     --top_k 1000 \
     --out_dir "$OUTPUT_ROOT/teacher_cache" \
-    2>&1 | tee "$OUTPUT_ROOT/precompute.log"
+    2>&1 | tee "$OUTPUT_ROOT/logs/precompute.log"
 
 echo "✓ Precompute completed"
 echo ""
 
-# Stage 2
+# -------------------------------------------------------------------------
+# Stage 2: E2E Distillation (abq-llm 环境)
+# -------------------------------------------------------------------------
 echo "[3/4] Stage 2: E2E Distillation"
 echo "--------------------------------------------"
 python -m lgrquant.stage2.quant_finetune \
@@ -78,12 +84,14 @@ python -m lgrquant.stage2.quant_finetune \
     --distill_loss kl_top \
     --dataset wikitext2 \
     --nsamples $NSAMPLES \
-    2>&1 | tee "$OUTPUT_ROOT/stage2.log"
+    2>&1 | tee "$OUTPUT_ROOT/logs/stage2.log"
 
 echo "✓ Stage 2 completed"
 echo ""
 
-# Inference
+# -------------------------------------------------------------------------
+# Inference: Evaluation (dq_xx 环境)
+# -------------------------------------------------------------------------
 echo "[4/4] Inference: Evaluation"
 echo "--------------------------------------------"
 conda activate dq_xx
@@ -96,12 +104,14 @@ python -m lgrquant.inference.inference_test \
     --asym \
     --ppl_datasets wikitext2 \
     --prompt "Artificial intelligence is" \
-    2>&1 | tee "$OUTPUT_ROOT/inference.log"
+    2>&1 | tee "$OUTPUT_ROOT/logs/inference.log"
 
 echo "✓ Inference completed"
 echo ""
 
+# -------------------------------------------------------------------------
 # Summary
+# -------------------------------------------------------------------------
 echo "============================================"
 echo "Quick Test Completed Successfully!"
 echo "============================================"
@@ -110,6 +120,6 @@ echo "Output files:"
 ls -lh "$OUTPUT_ROOT/"
 echo ""
 echo "Logs:"
-ls -lh "$OUTPUT_ROOT/"*.log
+ls -lh "$OUTPUT_ROOT/logs/"
 echo ""
 echo "To clean up: rm -rf $OUTPUT_ROOT"
