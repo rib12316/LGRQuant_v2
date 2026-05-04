@@ -1,0 +1,27 @@
+# LGRQuant_v2 Stage 1 & Inference Environment (dq_xx)
+# Python 3.9, PyTorch 2.1, CUDA 11.8
+
+# Core
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+
+# Transformers
+transformers==4.37.0
+accelerate>=0.25.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# Datasets
+datasets>=2.14.0
+
+# Evaluation
+lm-eval==0.4.4
+
+# Utilities
+numpy<2.0
+scipy
+tqdm
+
+# Optional (for W4)
+# marlin is built from third_party/marlin_ist/

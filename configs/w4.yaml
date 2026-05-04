@@ -1,0 +1,8 @@
+# W4 (4-bit) Quantization Configuration
+bits: 4
+group_size: -1  # per-channel
+sym: true
+asym: false
+dataset: wikitext2
+nsamples: 128
+seqlen: 2048

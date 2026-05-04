@@ -1,0 +1,15 @@
+# Paths Configuration Template
+# Copy this file to configs/paths.yaml and fill in your actual paths
+
+# Model paths
+model_path: "/path/to/your/model"  # e.g., /data2/llms/Qwen2.5-7B-Instruct
+
+# Output paths
+output_root: "/path/to/output"  # e.g., /data2/xx_llms/LGRQuant_v2_output
+
+# Conda environment paths
+dq_xx_python: "/path/to/dq_xx/bin/python"  # e.g., /data0/miniconda3/envs/dq_xx/bin/python
+abq_llm_python: "/path/to/abq-llm/bin/python"  # e.g., /data0/miniconda3/envs/abq-llm/bin/python
+
+# Teacher cache directory (for stage2 precompute)
+teacher_cache_dir: "${output_root}/teacher_topk_cache"

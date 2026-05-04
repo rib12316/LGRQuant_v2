@@ -1,0 +1,8 @@
+# W2 (2-bit) Quantization Configuration
+bits: 2
+group_size: 64
+sym: false
+asym: true
+dataset: wikitext2
+nsamples: 128
+seqlen: 2048
