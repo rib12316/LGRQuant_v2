@@ -4,6 +4,12 @@
 
 set -e
 
+# 初始化 conda (必须在脚本中执行)
+eval "$(conda shell.bash hook)" 2>/dev/null || source "$(conda info --base)/etc/profile.d/conda.sh" 2>/dev/null || {
+    echo "ERROR: Cannot initialize conda. Please run: conda init bash"
+    exit 1
+}
+
 # 配置
 MODEL_PATH="${MODEL_PATH:-/data2/llms/Qwen2.5-3B}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/tmp/lgrquant_quick_test}"
