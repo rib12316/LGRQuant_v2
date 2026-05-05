@@ -273,16 +273,6 @@ def quant_sequential(args, model, layers, dataloader, dev):
             set_phase("idle")  # 标记当前 layer 完成，进入 idle
             print()
         del inps
-        torch.save({
-            "quantizers": quantizers,
-            "true_quant": None,  # Will be filled by save_quant_model
-            "meta": {
-                "bits": args.wbits,
-                "group_size": args.group_size,
-                "sym": not args.asym,
-                "version": "2.0"
-            }
-        }, args.out_path+"/quantized_model.pth")
 
     if args.no_sz:
         module_to_quantizer = {}
@@ -491,33 +481,21 @@ def save_quant_model(args, model, quantizers, prefix):
                     true_quant[k + '_qzero'] = quantizers[new_k]["scales"][1]
                 true_quant[k] = quantizers[new_k]["weights"]
 
-    # Save to unified checkpoint
+    # Save unified checkpoint — 单个文件包含全部量化产物
     unified_path = (args.out_path + "/quantized_model.pth") if args.out_path else "quantized_model.pth"
-    if os.path.exists(unified_path):
-        ckpt = torch.load(unified_path, map_location="cpu")
-    else:
-        ckpt = {
-            "quantizers": quantizers,
-            "meta": {
-                "bits": args.wbits,
-                "group_size": args.group_size,
-                "sym": not args.asym,
-                "version": "2.0"
-            }
+    unified_ckpt = {
+        "quantizers": quantizers,
+        "true_quant": true_quant,
+        "meta": {
+            "bits": args.wbits,
+            "group_size": args.group_size,
+            "sym": not args.asym,
+            "version": "2.0"
         }
-    ckpt["true_quant"] = true_quant
-    torch.save(ckpt, unified_path)
+    }
+    torch.save(unified_ckpt, unified_path)
     print(f"Saved unified checkpoint to {unified_path}")
-
-    # Also save separate files for backward compatibility (optional)
-    if args.out_path is not None:
-        if not args.save_true_only:
-            torch.save(fake_quant, args.out_path+"/"+"fake_quant.pth")
-    else:
-        if not args.save_true_only:
-            torch.save(fake_quant, "fake_quant.pth")
-            torch.save(fake_quant, "fake_quant.pth")
-            torch.save(true_quant, "true_quant.pth")
+    return unified_ckpt
 
 
 

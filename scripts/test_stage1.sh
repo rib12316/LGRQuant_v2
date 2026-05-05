@@ -19,7 +19,7 @@ python -m lgrquant.stage1.quantize \
     --model "$MODEL" \
     --dataset wikitext2 \
     --wbits 2 \
-    --groupsize 64 \
+    --group-size 64 \
     --save \
     --nsamples $NSAMPLES \
     --out_path "$OUT"

@@ -4,7 +4,7 @@
 set -e
 
 MODEL="${1:-/data2/llms/Qwen2.5-3B}"
-CKPT="${2:-/tmp/lgrquant_test/stage1/true_quant.pth}"
+CKPT="${2:-/tmp/lgrquant_test/stage1/quantized_model.pth}"
 
 echo "Testing Inference..."
 echo "Model: $MODEL"

@@ -352,10 +352,15 @@ def recover_original_layers(model, quantizers, module_to_quantizer, original_dty
             
             # 获取反量化后的权重
             dequantized_weight = module.get_dequantized_weight()
-            
+
             # 恢复原始模块的权重
             original_module = module.original_module
-            original_module.weight.data = dequantized_weight.to(original_dtype[name])
+            if original_module.weight is None:
+                original_module.weight = torch.nn.Parameter(
+                    dequantized_weight.to(original_dtype[name])
+                )
+            else:
+                original_module.weight.data = dequantized_weight.to(original_dtype[name])
             
             # 如果训练了 bias，确保 bias 被保留
             if hasattr(args, 'train_bias') and args.train_bias and original_module.bias is not None:
@@ -439,15 +444,14 @@ def get_finetune_quantizers(model, quantizers, module_to_quantizer, original_dty
 def save_quantizers(quantizers: Dict, out_dir: str, save_format: str = "pth", meta: Dict = None) -> str:
     os.makedirs(out_dir, exist_ok=True)
     if save_format == "pth":
-        out_path = os.path.join(out_dir, "quantizers.pth")
-        torch.save(quantizers, out_path)
-        # Also save unified checkpoint format
+        # 仅保存 unified checkpoint
         unified_ckpt = {
             "quantizers": quantizers,
-            "true_quant": None,  # Will be filled by save_quant_model
+            "true_quant": None,  # 由 save_quant_model 后续填充
             "meta": meta or {"version": "2.0"}
         }
-        torch.save(unified_ckpt, os.path.join(out_dir, "quantized_model.pth"))
+        out_path = os.path.join(out_dir, "quantized_model.pth")
+        torch.save(unified_ckpt, out_path)
         return out_path
 
     if save_format == "safetensors":
@@ -520,7 +524,7 @@ def save_quant_model(args, model, quantizers, prefix):
                     true_quant[k + '_qzero'] = quantizers[new_k]["scales"][1]
                 true_quant[k] = quantizers[new_k]["weights"]
 
-    # Build unified checkpoint
+    # 仅保存 unified checkpoint (单个文件)
     unified_ckpt = {
         "quantizers": quantizers,
         "true_quant": true_quant,
@@ -532,18 +536,10 @@ def save_quant_model(args, model, quantizers, prefix):
             "version": "2.0"
         }
     }
-
-    # Save unified checkpoint
-    if args.out_path is not None:
-        torch.save(unified_ckpt, args.out_path+"/"+"quantized_model.pth")
-        # Also save separate files for backward compatibility
-        torch.save(fake_quant, args.out_path+"/"+"fake_quant.pth")
-        torch.save(true_quant, args.out_path+"/"+"true_quant.pth")
-    else:
-        torch.save(unified_ckpt, "quantized_model.pth")
-        torch.save(fake_quant, "fake_quant.pth")
-        torch.save(true_quant, "true_quant.pth")
-    print(f"Saved unified checkpoint to {args.out_path if args.out_path else '.'}/quantized_model.pth")
+    unified_path = (args.out_path + "/quantized_model.pth") if args.out_path else "quantized_model.pth"
+    torch.save(unified_ckpt, unified_path)
+    print(f"Saved unified checkpoint to {unified_path}")
+    return unified_ckpt
 
 
 class DistillTrainer(Trainer):
@@ -629,7 +625,7 @@ def main(args):
         true_quant_state = torch.load(args.true_quant_path, map_location="cpu")
         quantizers, base_state_dict = parse_true_quant_state_dict(true_quant_state, prefix="model.layers.")
         if len(quantizers) == 0:
-            raise ValueError(f"true_quant.pth 中未找到任何 *_qscale 键：{args.true_quant_path}")
+            raise ValueError(f"checkpoint 中未找到任何 *_qscale 键：{args.true_quant_path}")
         model.load_state_dict(base_state_dict, strict=False)
     else:
         if args.ckpt is not None:
@@ -847,12 +843,11 @@ def main(args):
             torch.save(extra_sd, extra_path)
             print(f"finetuned ln/bias saved to {extra_path}")
     
-    # # 恢复原始层并保存最终的 scale 和 zero
-    # quantizers = recover_original_layers(model, quantizers, module_to_quantizer, original_dtype, args)
-
-    # save_quant_model(args, model, quantizers, prefix="model.layers.")
-    # save_dir = args.out_path if args.out_path is not None else "outputs"
-    # print(f"model saved to {save_dir}")
+    # 恢复原始层并保存最终的 unified checkpoint (包含 true_quant)
+    quantizers = recover_original_layers(model, quantizers, module_to_quantizer, original_dtype, args)
+    save_quant_model(args, model, quantizers, prefix="model.layers.")
+    save_dir = args.out_path if args.out_path is not None else "outputs"
+    print(f"unified checkpoint saved to {save_dir}/quantized_model.pth")
 
 
 if __name__ == "__main__":

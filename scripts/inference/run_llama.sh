@@ -23,11 +23,11 @@ cd "$PROJECT_ROOT"
 # Run inference with Llama model
 python lgrquant/inference/inference_test.py \
     --model_path "${MODEL_PATH:-/data2/llms/llama-2-7b}" \
-    --quantizers_path "${QUANT_PATH:-./outputs/stage2/quantizers.pth}" \
+    --quantizers_path "${QUANT_PATH:-./outputs/stage2/quantized_model.pth}" \
     --group_size 64 \
     --asym \
     --ppl_datasets wikitext2 \
-    "$@"
+
 
 echo ""
 echo "Inference completed!"

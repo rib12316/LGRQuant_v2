@@ -37,7 +37,7 @@ from lgrquant.core.linear_w2a16 import LinearW2A16  # noqa: E402
 from lgrquant.core.decoupleQ_kernels import (  # noqa: E402
     dQ_preprocess_weights_int2_for_weight_only,
 )
-from lgrquant.data.loader import get_loaders  # noqa: E402
+from lgrquant.data.loader import get_loaders, get_loaders_legacy  # noqa: E402
 
 # W4 imports are deferred to avoid marlin dependency when using W2 only
 def _get_linear_w4a16():
@@ -249,20 +249,24 @@ def load_quantized_model(model_path, ckpt_path, group_size, kernel="w2",
     # Load checkpoint
     ckpt = torch.load(ckpt_path, map_location="cpu")
 
-    # Check if unified checkpoint format
-    if isinstance(ckpt, dict) and "true_quant" in ckpt:
+    # Format detection: unified > legacy true_quant > legacy quantizers
+    if isinstance(ckpt, dict) and "true_quant" in ckpt and ckpt["true_quant"] is not None:
+        # Unified checkpoint with complete true_quant (final Stage1 or Stage2 output)
         print("  [format] unified checkpoint (quantized_model.pth)")
         sd = ckpt["true_quant"]
         meta = ckpt.get("meta", {})
         print(f"  [meta] bits={meta.get('bits', 'unknown')}, group_size={meta.get('group_size', group_size)}, sym={meta.get('sym', not asym)}")
-    elif isinstance(ckpt, dict) and all(k.endswith(('_qscale', '_qzero')) or v.dtype == torch.int8
-                                        or not k.startswith('model.layers') for k, v in ckpt.items()):
-        # Legacy true_quant.pth format (state dict with _qscale/_qzero)
+    elif isinstance(ckpt, dict) and "quantizers" in ckpt:
+        # Unified checkpoint with quantizers but true_quant is None → convert quantizers
+        print("  [format] unified checkpoint (true_quant=None, converting from quantizers)")
+        sd = convert_quantizers_to_state_dict(ckpt["quantizers"], asym=asym)
+    elif isinstance(ckpt, dict) and any(k.endswith('_qscale') for k in ckpt.keys()):
+        # Legacy true_quant.pth format (state dict with _qscale/_qzero suffixes)
         print("  [format] legacy true_quant.pth")
         sd = ckpt
     else:
-        # Legacy quantizers.pth format
-        print("  [format] legacy quantizers.pth")
+        # Legacy quantizers.pth or raw quantizers dict
+        print("  [format] legacy quantizers dict")
         quantizers = ckpt.get("w_quantizers", ckpt) if isinstance(ckpt, dict) else ckpt
         sd = convert_quantizers_to_state_dict(quantizers, asym=asym)
 
@@ -301,63 +305,9 @@ def load_quantized_model(model_path, ckpt_path, group_size, kernel="w2",
     return model
 
 
-# Legacy loading functions (kept for backward compatibility)
-def load_true_quant_model(model_path, ckpt_path, group_size, kernel="w2",
-                          fp16_main=False):
-    """Legacy loader for true_quant.pth format."""
-    return load_quantized_model(model_path, ckpt_path, group_size, kernel=kernel,
-                                asym=True, fp16_main=fp16_main)
-
-
-def load_quantizers_model(model_path, quantizers_path, group_size, asym=True,
-                          fp16_main=False):
-    """Legacy loader for quantizers.pth format."""
-    return load_quantized_model(model_path, quantizers_path, group_size,
-                                kernel="w2", asym=asym, fp16_main=fp16_main)
-    print(f"[Load] true_quant ckpt: {ckpt_path}  kernel={kernel}")
-    model = _get_model(model_path)
-
-    sd = torch.load(ckpt_path, map_location="cpu")
-
-    # 1) 先把非量化参数（embed/norm/lm_head/bias）灌入主干
-    fp_sd = {k: v for k, v in sd.items()
-             if not k.endswith(".weight_qscale")
-             and not k.endswith(".weight_qzero")
-             and v.dtype != torch.int8}
-    missing, unexpected = model.load_state_dict(fp_sd, strict=False)
-    print(f"  load_state_dict (FP part): missing={len(missing)} unexpected={len(unexpected)}")
-
-    # 2) 用对应内核替换 q/k/v/o/gate/up/down
-    if kernel == "w2":
-        replace_linear_with_w2(model, sd, group_size)
-    elif kernel == "w4":
-        replace_linear_with_w4(model, sd, group_size)
-    else:
-        raise ValueError(f"unknown kernel: {kernel}")
-
-    # 3) 可选：把主干（embed/norm/lm_head 等 nn.Parameter）转成 fp16，
-    #    这样 LinearW2A16.forward 内的 bf16<->fp16 cast 直接退化成 no-op。
-    #    LinearW2A16 内部 weight(int8)/scale/zp/bias 都是普通 attribute（不是
-    #    nn.Parameter），不会被 .half() 影响；Qwen2RMSNorm 在 forward 里自带
-    #    fp32 上采样，参数 fp16 也安全。
-    if fp16_main:
-        print("  [opt] convert backbone to fp16 (remove per-layer dtype cast)")
-        model = model.to(torch.float16)
-
-    model = model.cuda()
-
-    # 4) 预热：把所有 LinearW2A16 的 int8 -> int2 packed 预处理 + scale/zp/bias
-    #    fp16 化都在加载阶段完成，避免第一次 forward 触发 252 次 CPU<->GPU 拷贝
-    #    导致 warmup 冷启动慢。
-    if kernel == "w2":
-        _prewarm_w2a16(model)
-    elif kernel == "w4":
-        _, _prewarm_w4a16_fn = _get_linear_w4a16()
-        _prewarm_w4a16_fn(model)
-
-    return model
-
-
+# ---------------------------------------------------------------------------
+# CUDA kernel pre-warm (加载阶段完成 packing，避免第一次 forward 的冷启动开销)
+# ---------------------------------------------------------------------------
 def _prewarm_w2a16(model):
     n = 0
     for m in model.modules():
@@ -374,6 +324,14 @@ def _prewarm_w2a16(model):
             m.weight_processed = True
             n += 1
     print(f"  [opt] pre-warmed {n} LinearW2A16 layers")
+
+
+# Legacy loading functions (kept for backward compatibility)
+def load_true_quant_model(model_path, ckpt_path, group_size, kernel="w2",
+                          fp16_main=False):
+    """Legacy loader for true_quant.pth format."""
+    return load_quantized_model(model_path, ckpt_path, group_size, kernel=kernel,
+                                asym=True, fp16_main=fp16_main)
 
 
 def load_quantizers_model(model_path, quantizers_path, group_size, asym=True,
