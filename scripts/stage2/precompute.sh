@@ -30,7 +30,7 @@ cd "$PROJECT_ROOT"
 python -m lgrquant.stage2.precompute_teacher_topk \
     --model_id "${MODEL_PATH:-/data2/llms/Qwen2.5-3B-Instruct}" \
     --dataset wikitext2 \
-    --nsamples "${NSAMPLES:-128}" \
+    --nsamples "${S2_NSAMPLES:-1000}" \
     --seqlen 2048 \
     --top_k 1000 \
     --out_dir "${PRECOMPUTE_OUT:-${OUTPUT_ROOT:-./outputs}/teacher_topk_cache}"

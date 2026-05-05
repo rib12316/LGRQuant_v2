@@ -15,7 +15,8 @@ PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 # 环境变量默认值（可由调用者覆盖）
 export MODEL_PATH="${MODEL_PATH:-/data2/llms/Qwen2.5-3B-Instruct}"
 export OUTPUT_ROOT="${OUTPUT_ROOT:-/data2/xx_llms/pipeline_output}"
-export NSAMPLES="${NSAMPLES:-128}"
+export NSAMPLES="${NSAMPLES:-128}"          # Stage 1
+export S2_NSAMPLES="${S2_NSAMPLES:-1000}"  # Stage 2 / Precompute
 export TRAIN_STEPS="${TRAIN_STEPS:-200}"
 export WBITS="${WBITS:-2}"
 export GROUP_SIZE="${GROUP_SIZE:-64}"

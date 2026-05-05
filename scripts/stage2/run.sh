@@ -39,7 +39,7 @@ python -m lgrquant.stage2.quant_finetune \
     --use_distill \
     --distill_loss kl_top \
     --dataset wikitext2 \
-    --nsamples "${NSAMPLES:-128}"
+    --nsamples "${S2_NSAMPLES:-1000}"
 
 echo ""
 echo "Stage 2 completed!"
